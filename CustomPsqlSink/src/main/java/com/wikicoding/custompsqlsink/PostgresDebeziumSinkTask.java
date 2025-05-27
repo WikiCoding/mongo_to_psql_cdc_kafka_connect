@@ -1,5 +1,6 @@
 package com.wikicoding.custompsqlsink;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.kafka.connect.data.Struct;
@@ -10,6 +11,7 @@ import org.apache.kafka.connect.sink.SinkTask;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.util.Collection;
 import java.util.Map;
 
@@ -17,7 +19,7 @@ public class PostgresDebeziumSinkTask extends SinkTask {
     private Connection connection;
     private PreparedStatement upsertStmt;
     private PreparedStatement deleteStmt;
-    private ObjectMapper mapper = new ObjectMapper();
+    private final ObjectMapper mapper = new ObjectMapper();
 
     private String jdbcUrl;
     private String jdbcUser;
@@ -49,90 +51,67 @@ public class PostgresDebeziumSinkTask extends SinkTask {
         for (SinkRecord record : records) {
             try {
                 Struct valueStruct = (Struct) record.value();
+
+                if (valueStruct != null)
+                    System.out.println("Value Struct read is: " + valueStruct);
+
+                // Handle deletes (tombstone or value is null)
                 if (valueStruct == null) {
-                    System.out.println("valueStruct is null");
-
-                    Object keyObj = record.key();
-                    if (keyObj instanceof Map) {
-                        Map<String, Object> keyMap = (Map<String, Object>) keyObj;
-                        Object rawIdJson = keyMap.get("id");
-
-                        if (rawIdJson != null) {
-                            JsonNode idNode = mapper.readTree(rawIdJson.toString()); // rawIdJson is a JSON string
-                            String id = idNode.path("$oid").asText();
-
-                            System.out.println("Found id: " + id);
-
-                            deleteStmt.setString(1, id);
-                            deleteStmt.executeUpdate();
-                        } else {
-                            System.out.println("id field in keyMap is null");
-                        }
-                    } else {
-                        System.out.println("record.key() is not a Map, it is: " + (keyObj != null ? keyObj.getClass().getName() : "null"));
-                    }
+                    handleDeleteCase(record);
 
                     continue;
                 }
 
-                Object afterObj = valueStruct.get("after");
-                System.out.println("afterObj class: " + (afterObj == null ? "null" : afterObj.getClass().getName()));
+                // Handle inserts or updates
+                String afterJson = (String) valueStruct.get("after");
 
-                if (afterObj == null) {
+                if (afterJson == null) {
+                    System.out.println("Skipping record with null 'after' field");
                     continue;
                 }
 
-                if (afterObj instanceof Struct) {
-                    Struct after = (Struct) afterObj;
+                String id = "";
+                String name = "";
 
-                    // Extract _id which can be a nested Struct with $oid
-                    String id = "";
-                    Object idObj = after.get("_id");
-                    if (idObj instanceof Struct) {
-                        Struct idStruct = (Struct) idObj;
-                        id = idStruct.getString("$oid");
-                    } else if (idObj instanceof String) {
-                        id = (String) idObj;
-                    }
+                JsonNode afterNode = mapper.readTree(afterJson);
 
-                    String name = after.getString("name");
-
-                    upsertStmt.setString(1, id);
-                    upsertStmt.setString(2, name);
-                    upsertStmt.executeUpdate();
-
-                } else if (afterObj instanceof String) {
-                    // after is JSON string, parse it
-                    String afterJson = (String) afterObj;
-                    JsonNode afterNode = mapper.readTree(afterJson);
-
-                    // Extract _id.$oid properly
-                    String id = "";
-                    JsonNode idNode = afterNode.path("_id");
-                    if (!idNode.isMissingNode()) {
-                        JsonNode oidNode = idNode.path("$oid");
-                        if (!oidNode.isMissingNode() && oidNode.isTextual()) {
-                            id = oidNode.asText();
-                        }
-                    }
-
-                    String name = afterNode.path("name").asText();
-
-                    upsertStmt.setString(1, id);
-                    upsertStmt.setString(2, name);
-                    upsertStmt.executeUpdate();
-
-                } else {
-                    // unexpected type, skip or log
-                    continue;
+                JsonNode idNode = afterNode.path("_id").path("$oid");
+                if (!idNode.isMissingNode() && idNode.isTextual()) {
+                    id = idNode.asText();
                 }
 
+                name = afterNode.path("name").asText();
+
+                // Perform upsert
+                upsertStmt.setString(1, id);
+                upsertStmt.setString(2, name);
+                upsertStmt.executeUpdate();
             } catch (Exception e) {
                 throw new ConnectException("Error processing record", e);
             }
         }
     }
 
+    private void handleDeleteCase(SinkRecord record) throws JsonProcessingException, SQLException {
+        System.out.println("valueStruct is null");
+
+        Map<String, Object> keyObj = (Map<String, Object>) record.key();
+
+        Map<String, Object> payloadJson = (Map<String, Object>) keyObj.get("payload");
+        System.out.println("Got payload: " + payloadJson.toString() + " and it's class name is " + payloadJson.getClass().getName());
+
+        Object id = payloadJson.get("id");
+        System.out.println("Got oid: " + id.toString() + " and it's class name is " + id.getClass().getName());
+
+        if (id instanceof String) {
+            JsonNode idNode = mapper.readTree((String) id);
+            String oid = idNode.path("$oid").asText();
+            System.out.println("Extracted $oid: " + oid);
+
+            deleteStmt.setString(1, oid);
+            deleteStmt.executeUpdate();
+        }
+    }
 
 
     @Override
