@@ -46,12 +46,12 @@ CREATE TABLE products (
 {
   "name": "jdbc-sink-connector",
   "config": {
-    "connector.class": "io.debezium.connector.jdbc.JdbcSinkConnector",
+    "connector.class": "com.wikicoding.custompsqlsink.PostgresDebeziumSinkConnector",
     "tasks.max": "1",
     "connection.url": "jdbc:postgresql://postgres:5432/productsdb",
-    "connection.username": "postgres",
+    "connection.user": "postgres",
     "connection.password": "postgres",
-    "topics": "prods.products.products",
+    "topics": "prods.productsdb.products",
     "auto.create": "true",
     "insert.mode": "upsert",
     "delete.enabled": "false",
@@ -60,14 +60,10 @@ CREATE TABLE products (
     "schema.evolution": "basic",
     "database.time_zone": "UTC",
     "value.converter": "org.apache.kafka.connect.json.JsonConverter",
-    "value.converter.schemas.enable": "false",
+    "value.converter.schemas.enable": "true",
     "key.converter": "org.apache.kafka.connect.json.JsonConverter",
     "key.converter.schemas.enable": "false",
-    "table.name.format": "products",
-    "transforms": "unwrap",
-    "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
-    "transforms.unwrap.drop.tombstones": "true",
-    "transforms.unwrap.delete.handling.mode": "rewrite"
+    "table.name.format": "products"
   }
 }
 ```

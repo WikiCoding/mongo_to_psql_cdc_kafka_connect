@@ -116,6 +116,9 @@ services:
       CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
       CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
       CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_PLUGIN_PATH: /kafka/connect,/custom-plugins
     depends_on:
       - zookeeper
       - kafka
+    volumes:
+      - ./kafka-plugins/custom-psql:/custom-plugins
