@@ -1,0 +1,10 @@
+{
+  "name": "mongodb-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.mongodb.MongoDbConnector",
+    "mongodb.connection.string": "mongodb://mongo:27017/?replicaSet=rs0",
+    "mongodb.hosts": "rs0/mongo:27017",
+    "topic.prefix": "prods",
+    "database.history.kafka.bootstrap.servers": "kafka:9092"
+  }
+}

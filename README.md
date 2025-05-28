@@ -1,3 +1,9 @@
+# Running this app
+
+1. To run this, you just need to run `docker-compose up -d` in your terminal. All the steps are automated to register the connectors, create the tables etc. If you wish you can disable the init containers and do the steps manually according to the Configs section below.
+2. Then go to http://localhost:8081, enter the `productsdb` and then the `products` collection and create a new document.
+3. Finally visit the postgres container or to the adminer at http://localhost:8082/?pgsql=postgres&username=postgres&db=productsdb&ns=public and you'll see that the record will be inserted into the database.
+
 # Configs
 
 1. Open the `mongosh` and initiate a replica set with
@@ -31,11 +37,8 @@ CREATE TABLE products (
     "connector.class": "io.debezium.connector.mongodb.MongoDbConnector",
     "mongodb.connection.string": "mongodb://mongo:27017/?replicaSet=rs0",
     "mongodb.hosts": "rs0/mongo:27017",
-    "mongodb.name": "productdb",
-    "mongodb.include.collection.list": "products.products",
     "topic.prefix": "prods",
-    "database.history.kafka.bootstrap.servers": "kafka:9092",
-    "database.history.kafka.topic": "dbhistory.products"
+    "database.history.kafka.bootstrap.servers": "kafka:9092"
   }
 }
 ```
@@ -53,17 +56,10 @@ CREATE TABLE products (
     "connection.password": "postgres",
     "topics": "prods.productsdb.products",
     "auto.create": "true",
-    "insert.mode": "upsert",
-    "delete.enabled": "false",
-    "primary.key.fields": "_id",
-    "primary.key.mode": "record_value",
-    "schema.evolution": "basic",
-    "database.time_zone": "UTC",
-    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
-    "value.converter.schemas.enable": "true",
     "key.converter": "org.apache.kafka.connect.json.JsonConverter",
     "key.converter.schemas.enable": "false",
-    "table.name.format": "products"
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "true"
   }
 }
 ```

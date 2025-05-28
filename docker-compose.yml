@@ -5,6 +5,8 @@ services:
       ZOOKEEPER_CLIENT_PORT: 2181
     ports:
       - "2181:2181"
+    networks:
+      - app-network
 
   kafka:
     image: confluentinc/cp-kafka:latest
@@ -14,6 +16,8 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     ports:
       - "9092:9092"
+    networks:
+      - app-network
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
@@ -25,6 +29,8 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
     ports:
       - "8080:8080"
+    networks:
+      - app-network
 
   mongo:
     image: mongo:latest
@@ -35,6 +41,30 @@ services:
     environment:
       MONGO_INITDB_DATABASE: products
     command: ["--replSet", "rs0", "--bind_ip_all"]
+    networks:
+      - app-network
+
+  mongo-init-replica:
+    image: mongo:latest
+    depends_on:
+      - mongo
+    entrypoint: >
+      bash -c '
+      sleep 10 &&
+      until mongosh --host mongo --eval "print(\"waiting for connection\")"; do sleep 1; done &&
+      mongosh --host mongo --eval "
+        rs.initiate({
+          _id: \"rs0\",
+          members: [{ _id: 0, host: \"mongo:27017\" }]
+        })
+      " &&
+      mongosh --host mongo --eval "
+        db = db.getSiblingDB(\"productsdb\");
+        db.createCollection(\"products\");
+      "
+      '
+    networks:
+      - app-network
 
   mongo-express:
     image: mongo-express
@@ -44,6 +74,8 @@ services:
     environment:
       ME_CONFIG_MONGODB_URL: mongodb://mongo:27017/
       ME_CONFIG_BASICAUTH: false
+    networks:
+      - app-network
 
   postgres:
     image: postgres:latest
@@ -53,55 +85,37 @@ services:
       POSTGRES_DB: productsdb
     ports:
       - "5555:5432"
+    networks:
+      - app-network
 
-  # kafka-connect:
-  #   image: "confluentinc/cp-kafka-connect:latest"
-  #   environment:
-  #     CONNECT_BOOTSTRAP_SERVERS: "kafka:9092"
-  #     CONNECT_REST_ADVERTISED_HOST_NAME: "kafka-connect"
-  #     CONNECT_GROUP_ID: "kafka-connect"
-  #     CONNECT_CONFIG_STORAGE_TOPIC: "_connect_configs_sink"
-  #     CONNECT_OFFSET_STORAGE_TOPIC: "_connect_offsets_sink"
-  #     CONNECT_STATUS_STORAGE_TOPIC: "_connect_status_sink"
-  #     CONNECT_KEY_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
-  #     CONNECT_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
-  #     CONNECT_INTERNAL_KEY_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
-  #     CONNECT_INTERNAL_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
-  #     CONNECT_REST_PORT: 8083
-  #     CONNECT_PLUGIN_PATH: "/usr/share/java"
-  #     CONNECT_SECURITY_PROTOCOL: "PLAINTEXT"
-  #     CONNECT_CONFLUENT_SUPPORT_METRICS_ENABLE: "false"
-  #     CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
-  #     CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
-  #     CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
-  #   ports:
-  #     - "8083:8083"
-  #   depends_on:
-  #     - kafka
-  #   volumes: # Adding the plugins to Kafka-Connect
-  #     - ./kafka-plugins/debezium-connector-mongodb:/usr/share/java/mongo-source
-  #     - ./kafka-plugins/confluentinc-kafka-connect-jdbc-10.8.3:/usr/share/java/psql-sink
+  adminer:
+    image: adminer:latest
+    ports:
+      - "8082:8080"
+    depends_on:
+      - postgres
+    networks:
+      - app-network
 
-  # debezium:
-  #   image: debezium/connect:2.7.3.Final
-  #   ports:
-  #     - "8083:8083"
-  #   environment:
-  #     BOOTSTRAP_SERVERS: kafka:9092
-  #     GROUP_ID: 1
-  #     CONFIG_STORAGE_TOPIC: debezium_config
-  #     OFFSET_STORAGE_TOPIC: debezium_offset
-  #     KEY_CONVERTER_SCHEMAS_ENABLE: "false"
-  #     VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
-  #     CONNECT_KEY_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
-  #     CONNECT_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
-  #     CONNECT_PLUGIN_PATH: "/kafka/connect/debezium-connector-mongodb,/kafka/connect/debezium-connector-jdbc"
-  #   depends_on:
-  #     - kafka
-  #     - mongo
-  #     - postgres
-  #   volumes:
-  #     - ./kafka-plugins:/kafka/connect
+  postgres-init:
+    image: postgres:latest
+    depends_on:
+      - postgres
+    environment:
+      PGPASSWORD: postgres
+    entrypoint: >
+      bash -c '
+      sleep 10 &&
+      until psql -h postgres -U postgres -c "SELECT 1"; do sleep 1; done &&
+      psql -h postgres -U postgres -d productsdb -c "
+        CREATE TABLE products (
+          _id TEXT PRIMARY KEY,
+          name TEXT
+        );
+      "
+      '
+    networks:
+      - app-network
 
   connector:
     image: quay.io/debezium/connect
@@ -122,3 +136,31 @@ services:
       - kafka
     volumes:
       - ./kafka-plugins/custom-psql:/custom-plugins
+    networks:
+      - app-network
+
+  connect-init:
+    image: curlimages/curl:latest
+    depends_on:
+      - connector
+    entrypoint: >
+      sh -c '
+      sleep 30 &&
+      echo "Registering MongoDB Source Connector..." &&
+      curl -X POST http://connector:8083/connectors \
+        -H "Content-Type: application/json" \
+        -d @/scripts/mongo-source-connector.json &&
+
+      echo "Registering JDBC Sink Connector..." &&
+      curl -X POST http://connector:8083/connectors \
+        -H "Content-Type: application/json" \
+        -d @/scripts/jdbc-sink-connector.json
+      '
+    volumes:
+      - ./scripts:/scripts:ro
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge

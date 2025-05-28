@@ -1,0 +1,15 @@
+{
+  "name": "jdbc-sink-connector",
+  "config": {
+    "connector.class": "com.wikicoding.custompsqlsink.PostgresDebeziumSinkConnector",
+    "tasks.max": "1",
+    "connection.url": "jdbc:postgresql://postgres:5432/productsdb",
+    "connection.user": "postgres",
+    "connection.password": "postgres",
+    "topics": "prods.productsdb.products",
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": "false",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "true"
+  }
+}

@@ -21,15 +21,11 @@ public class PostgresDebeziumSinkTask extends SinkTask {
     private PreparedStatement deleteStmt;
     private final ObjectMapper mapper = new ObjectMapper();
 
-    private String jdbcUrl;
-    private String jdbcUser;
-    private String jdbcPassword;
-
     @Override
     public void start(Map<String, String> props) {
-        jdbcUrl = "jdbc:postgresql://postgres:5432/productsdb";
-        jdbcUser = "postgres";
-        jdbcPassword = "postgres";
+        String jdbcUrl = props.get("connection.url");
+        String jdbcUser = props.get("connection.user");
+        String jdbcPassword = props.get("connection.password");
 
         try {
             connection = DriverManager.getConnection(jdbcUrl, jdbcUser, jdbcPassword);
@@ -94,6 +90,11 @@ public class PostgresDebeziumSinkTask extends SinkTask {
 
     private void handleDeleteCase(SinkRecord record) throws JsonProcessingException, SQLException {
         System.out.println("valueStruct is null");
+
+        if (record.key() instanceof Struct) {
+            System.out.println("key " + record.key().toString() + " is of type " + record.key().getClass());
+            return;
+        }
 
         Map<String, Object> keyObj = (Map<String, Object>) record.key();
 
